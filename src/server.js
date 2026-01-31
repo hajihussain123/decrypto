@@ -1,30 +1,47 @@
-const listener = Deno.listen({
-  port: 8000,
-  transport: 'tcp'
-});
+import { getWords } from "./words.js";
 
-const encoder = new TextEncoder();
-const connections = [];
+const createListener = () => {
+  return Deno.listen({
+    port: 8000,
+    transport: "tcp",
+  });
+};
 
-for await (const conn of listener) {
-  console.log(`connected`);
-  connections.push(conn);
-  conn.write(encoder.encode(`welcome to decrypto`));
-  if (connections.length === 2)
-    break;
-}
+const getPlayers = async () => {
+  const encoder = new TextEncoder();
+  const connections = [];
+  const listener = createListener();
 
-const player1 = connections[0];
-const player2 = connections[1];
+  for await (const conn of listener) {
+    console.log(`player connected`);
+    connections.push(conn);
+    await conn.write(encoder.encode(`welcome to decrypto`));
 
-await player1.write(encoder.encode(`let's start the game`));
-await player2.write(encoder.encode(`let's start the game`));
+    if (connections.length === 2) {
+      return connections;
+    }
+  }
+};
 
-console.log(`can begin the game`);
+const play = async (player1, player2) => {
+  const encoder = new TextEncoder();
+  const player1Words = getWords();
+  const player2Words = getWords();
+  await player1.write(encoder.encode(JSON.stringify(player1Words)));
+  await player2.write(encoder.encode(JSON.stringify(player2Words)));
+  // let player1Points = 0;
+  // let player2Points = 0;
+  // let Rounds = 0;
+  // while (player1Points < 2 && player2Points < 2 && rounds < 8) {
 
-// const player1 = await listener[0];
-// await player1.write(encoder.encode('welcome to decrypto'));
-// console.log('connected player 1');
-// const player2 = await listener[1];
-// await player2.write(encoder.encode('welcome to decrypto'));
-// console.log('connected player 2');
+  // }
+};
+
+const main = async () => {
+  const [player1, player2] = await getPlayers();
+  setTimeout(async () => {
+    await play(player1, player2);
+  }, 1);
+};
+
+await main();
