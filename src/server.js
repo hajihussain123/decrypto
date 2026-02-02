@@ -49,14 +49,13 @@ const play = async (player1, player2) => {
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
   const buffer = new Uint8Array(1024);
-  const player1Words = getWords();
-  const player2Words = getWords();
+  const [player1Words, player2Words] = getWords();
   await player1.write(encoder.encode(JSON.stringify(player1Words)));
   await player2.write(encoder.encode(JSON.stringify(player2Words)));
   let player1Points = 0;
   let player2Points = 0;
   let rounds = 0;
-  while (rounds < 2) {
+  while (rounds < 2 && player1Points < 2 && player2Points < 2) {
     let [p1, p2] = await handle(player1, player2, encoder, decoder, buffer);
     player1Points += p1;
     player2Points += p2;
@@ -64,9 +63,12 @@ const play = async (player1, player2) => {
     [p2, p1] = await handle(player2, player1, encoder, decoder, buffer);
     player1Points += p1;
     player2Points += p2;
-    rounds++;
     console.log(player1Points, player2Points);
+    rounds++;
   }
+  console.log(`player won`);
+  player1.close();
+  player2.close();
 };
 
 const main = async () => {
