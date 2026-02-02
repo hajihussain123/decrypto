@@ -41,7 +41,7 @@ const WORDS = [
 export const getWords = () => {
   const words = [];
   while (words.length < 8) {
-    const randomIndex = Math.round(Math.random() * words.length);
+    const randomIndex = Math.round(Math.random() * WORDS.length);
     const word = WORDS[randomIndex];
     if (!words.includes(word))
       words.push(word);

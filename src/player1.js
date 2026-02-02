@@ -12,7 +12,6 @@ const addLines = (line1, line2) => {
 
 const connect = async () => {
   return await Deno.connect({
-    hostname: "10.132.125.26",
     port: 8000,
     transport: "tcp",
   });
@@ -24,23 +23,18 @@ const displayWords = (data) => {
   console.log(board.join("\n"));
 };
 
-const printWelcome = async (connection, buffer, decoder) => {
-  const bytesRead = await connection.read(buffer);
-  const msg = decoder.decode(buffer.slice(0, bytesRead));
-  console.clear();
-  console.log(msg);
-};
-
-const readWords = async (connection, buffer, decoder) => {
-  const bytesRead = await connection.read(buffer);
-  const words = decoder.decode(buffer.slice(0, bytesRead));
-  return JSON.parse(words);
-};
-
-const read = async (connection, decoder, buffer) => {
+const read = async (connection) => {
+  const buffer = new Uint8Array(1024);
+  const decoder = new TextDecoder();
   const bytesRead = await connection.read(buffer);
   const data = decoder.decode(buffer.slice(0, bytesRead));
   return [bytesRead, data];
+};
+
+const printWelcome = async (connection) => {
+  const msg = (await read(connection))[1];
+  console.clear();
+  console.log(msg);
 };
 
 const readHints = () => {
@@ -50,34 +44,43 @@ const readHints = () => {
   return [hint1, hint2, hint3];
 };
 
+const guess = async (connection) => {
+  const encoder = new TextEncoder();
+  const code = prompt(`enter the code`);
+  console.log(`sending data....`);
+  await connection.write(encoder.encode(code));
+};
+
+const displayCode = (data) => console.log(data.slice(9));
+
+const writeHints = async (hints, connection, words) => {
+  const encoder = new TextEncoder();
+  await connection.write(encoder.encode(JSON.stringify(hints)));
+  console.clear();
+  displayWords(words);
+  hints.forEach((hint) => console.log(hint));
+};
+
 const main = async () => {
   const connection = await connect();
-  const decoder = new TextDecoder();
-  const encoder = new TextEncoder();
-  const buffer = new Uint8Array(1024);
-  await printWelcome(connection, buffer, decoder);
-  const words = await readWords(connection, buffer, decoder);
+  await printWelcome(connection);
+  const words = JSON.parse((await read(connection))[1]);
   displayWords(words);
   while (true) {
-    const [bytesRead, data] = await read(connection, decoder, buffer);
+    const [bytesRead, data] = await read(connection);
     if (bytesRead !== null) {
+
       if (data.startsWith("your Turn")) {
-        console.log(data.slice(9));
+        displayCode(data);
         const hints = readHints();
-        await connection.write(encoder.encode(JSON.stringify(hints)));
-        console.clear();
-        displayWords(words);
-        hints.forEach((hint) => console.log(hint));
-        const code = prompt(`enter the code`);
-        console.log(`sending data....`);
-        await connection.write(encoder.encode(code));
+        await writeHints(hints, connection, words);
+        await guess(connection);
       } else {
         const hints = JSON.parse(data);
         hints.forEach((element) => console.log(element));
-        const code = prompt(`enter the code`);
-        console.log(`sending data....`);
-        await connection.write(encoder.encode(code));
+        await guess(connection);
       }
+      
     }
   }
 };

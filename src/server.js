@@ -23,50 +23,58 @@ const getPlayers = async () => {
   }
 };
 
-const generateCode = () => {
-  return `3 1 2`;
+const generateCode = () => `3 1 2`;
+
+const getHints = async (player, code) => {
+  const encoder = new TextEncoder();
+  const buffer = new Uint8Array(1024);
+  await player.conn.write(encoder.encode(`your Turn`));
+  await player.conn.write(
+    encoder.encode(`===== CODE =====\n      ${code}     `),
+  );
+  const bytes = await player.conn.read(buffer);
+  return [bytes, buffer];
 };
 
-const handle = async (player1, player2, encoder, decoder, buffer) => {
+const readGuess = async (player) => {
+  const buffer = new Uint8Array(1024);
+  const decoder = new TextDecoder();
+  const byteCount = await player.conn.read(buffer);
+  const playerGuess = decoder.decode(buffer.slice(0, byteCount));
+  return playerGuess;
+};
+
+const handle = async (player1, player2) => {
   const code = generateCode();
-  await player1.write(encoder.encode(`your Turn`));
-  await player1.write(encoder.encode(`===== CODE =====\n      ${code}     `));
-  const bytes = await player1.read(buffer);
+  const [bytes, buffer] = await getHints(player1, code);
   if (bytes !== null) {
-    console.log(decoder.decode(buffer.slice(0, bytes)));
-    await player2.write(buffer.slice(0, bytes));
-    let byteCount = await player1.read(buffer);
-    const player1Guess = decoder.decode(buffer.slice(0, byteCount));
-    byteCount = await player2.read(buffer);
-    const player2Guess = decoder.decode(buffer.slice(0, byteCount));
-    const player1Points = player1Guess === code ? 0 : -1;
-    const player2Points = player2Guess === code ? 1 : 0;
-    return [player1Points, player2Points];
+    await player2.conn.write(buffer.slice(0, bytes));
+    const player1Guess = await readGuess(player1);
+    const player2Guess = await readGuess(player2);
+    player1.points += player1Guess === code ? 0 : -1;
+    player2.points += player2Guess === code ? 1 : 0;
   }
 };
 
-const play = async (player1, player2) => {
+const sendWords = async (player1, player2) => {
   const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
-  const buffer = new Uint8Array(1024);
   const [player1Words, player2Words] = getWords();
   await player1.write(encoder.encode(JSON.stringify(player1Words)));
   await player2.write(encoder.encode(JSON.stringify(player2Words)));
-  let player1Points = 0;
-  let player2Points = 0;
+};
+
+const play = async (player1, player2) => {
+  await sendWords(player1, player2);
+  const firstPlayer = { conn: player1, points: 0 };
+  const secondPlayer = { conn: player2, points: 0 };
   let rounds = 0;
-  while (rounds < 2 && player1Points < 2 && player2Points < 2) {
-    let [p1, p2] = await handle(player1, player2, encoder, decoder, buffer);
-    player1Points += p1;
-    player2Points += p2;
-    console.log(player1Points, player2Points);
-    [p2, p1] = await handle(player2, player1, encoder, decoder, buffer);
-    player1Points += p1;
-    player2Points += p2;
-    console.log(player1Points, player2Points);
+  while (rounds < 16 && firstPlayer.points < 2 && secondPlayer.points < 2) {
+    const players = rounds & 1
+      ? [firstPlayer, secondPlayer]
+      : [secondPlayer, firstPlayer];
+    await handle(...players);
     rounds++;
   }
-  console.log(`player won`);
   player1.close();
   player2.close();
 };
