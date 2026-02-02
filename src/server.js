@@ -39,8 +39,9 @@ const handle = async (player1, player2, encoder, decoder, buffer) => {
     const player1Guess = decoder.decode(buffer.slice(0, byteCount));
     byteCount = await player2.read(buffer);
     const player2Guess = decoder.decode(buffer.slice(0, byteCount));
-    if (player1Guess.length && player2Guess.length);
-    console.log(player1Guess, player2Guess);
+    const player1Points = player1Guess === code ? 0 : -1;
+    const player2Points = player2Guess === code ? 1 : 0;
+    return [player1Points, player2Points];
   }
 };
 
@@ -55,10 +56,16 @@ const play = async (player1, player2) => {
   let player1Points = 0;
   let player2Points = 0;
   let rounds = 0;
-  while (rounds<8) {
-    await handle(player1, player2, encoder, decoder, buffer);
-    await handle(player2, player1, encoder, decoder, buffer);
+  while (rounds < 2) {
+    let [p1, p2] = await handle(player1, player2, encoder, decoder, buffer);
+    player1Points += p1;
+    player2Points += p2;
+    console.log(player1Points, player2Points);
+    [p2, p1] = await handle(player2, player1, encoder, decoder, buffer);
+    player1Points += p1;
+    player2Points += p2;
     rounds++;
+    console.log(player1Points, player2Points);
   }
 };
 
