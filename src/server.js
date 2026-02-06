@@ -1,5 +1,12 @@
 import { getWords } from "./words.js";
 
+const CODES = [
+  "1 2 3", "1 3 2", "2 1 3", "2 3 1", "3 1 2", "3 2 1",
+  "1 2 4", "1 4 2", "2 1 4", "2 4 1", "4 1 2", "4 2 1",
+  "1 3 4", "1 4 3", "3 1 4", "3 4 1", "4 1 3", "4 3 1",
+  "2 3 4", "2 4 3", "3 2 4", "3 4 2", "4 2 3", "4 3 2"
+];
+
 const createListener = () => {
   return Deno.listen({
     port: 8000,
@@ -23,15 +30,12 @@ const getPlayers = async () => {
   }
 };
 
-const generateCode = () => `3 1 2`;
+const generateCode = () => CODES[Math.floor(Math.random()*CODES.length)];
 
 const getHints = async (player, code) => {
   const encoder = new TextEncoder();
   const buffer = new Uint8Array(1024);
-  await player.conn.write(encoder.encode(`your Turn`));
-  await player.conn.write(
-    encoder.encode(`===== CODE =====\n      ${code}     `),
-  );
+  await player.conn.write(encoder.encode(JSON.stringify({turn:true, code:code})));
   const bytes = await player.conn.read(buffer);
   return [bytes, buffer];
 };
@@ -45,10 +49,13 @@ const readGuess = async (player) => {
 };
 
 const handle = async (player1, player2) => {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
   const code = generateCode();
   const [bytes, buffer] = await getHints(player1, code);
   if (bytes !== null) {
-    await player2.conn.write(buffer.slice(0, bytes));
+    const data = JSON.parse(decoder.decode(buffer.slice(0, bytes)));
+    await player2.conn.write(encoder.encode(JSON.stringify({hints:data, code:code})));
     const player1Guess = await readGuess(player1);
     const player2Guess = await readGuess(player2);
     player1.points += player1Guess === code ? 0 : -1;
@@ -74,6 +81,14 @@ const play = async (player1, player2) => {
       : [secondPlayer, firstPlayer];
     await handle(...players);
     rounds++;
+  }
+  if (firstPlayer.points >= 2) {
+    player1.write(new TextEncoder().encode(JSON.stringify({ isWon: `yes` })));
+    player2.write(new TextEncoder().encode(JSON.stringify({ isWon: `no` })));
+  }
+  if (secondPlayer.points >= 2) {
+    player2.write(new TextEncoder().encode(JSON.stringify({ isWon: `yes` })));
+    player1.write(new TextEncoder().encode(JSON.stringify({ isWon: `no` })));
   }
   player1.close();
   player2.close();

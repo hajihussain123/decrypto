@@ -7,9 +7,12 @@ const boxen = (word) => {
 };
 
 const addLines = (line1, line2) => {
-  return line1.map((line, i) => `${line} ${line2[i]}`);
+  return line1.map((line, i) => {
+    const firstLine = line ? line : " ".repeat(10);
+    const secondLine = line2[i] ? line2[i] : " ".repeat(10);
+    return `${firstLine} ${secondLine}`;
+  });
 };
-
 const connect = async () => {
   return await Deno.connect({
     port: 8000,
@@ -51,8 +54,6 @@ const guess = async (connection) => {
   await connection.write(encoder.encode(code));
 };
 
-const displayCode = (data) => console.log(data.slice(9));
-
 const writeHints = async (hints, connection, words) => {
   const encoder = new TextEncoder();
   await connection.write(encoder.encode(JSON.stringify(hints)));
@@ -61,26 +62,68 @@ const writeHints = async (hints, connection, words) => {
   hints.forEach((hint) => console.log(hint));
 };
 
+const boxenWords = (words) => {
+  const topLine = `┌${"-".repeat(8)}┐`;
+  const lastLine = `└${"-".repeat(8)}┘`;
+  words.unshift(topLine);
+  words.push(lastLine);
+  return words;
+};
+
+const displayHints = (allHints) => {
+  const first = boxenWords(allHints[1].map((word) => `|${word.padStart(8)}|`));
+  const second = boxenWords(allHints[2].map((word) => `|${word.padStart(8)}|`));
+  const third = boxenWords(allHints[3].map((word) => `|${word.padStart(8)}|`));
+  const fourth = boxenWords(allHints[4].map((word) => `|${word.padStart(8)}|`));
+  console.log(
+    [first, second, third, fourth].reduce((a, b) => addLines(a, b)).join("\n"),
+  );
+};
+
+const displayCategories = (hints, allHints) => {
+  console.clear();
+  displayHints(allHints);
+  hints.forEach((element) => console.log(element));
+};
+
+const addHints = (hints, allHints, code) => {
+  const [number1, number2, number3] = code.split(" ");
+  allHints[number1].push(hints[0]);
+  allHints[number2].push(hints[1]);
+  allHints[number3].push(hints[2]);
+};
+
 const main = async () => {
   const connection = await connect();
+  const allHints = { 1: [], 2: [], 3: [], 4: [] };
   await printWelcome(connection);
   const words = JSON.parse((await read(connection))[1]);
   displayWords(words);
   while (true) {
-    const [bytesRead, data] = await read(connection);
+    const [bytesRead, rawData] = await read(connection);
+    const data = JSON.parse(rawData);
     if (bytesRead !== null) {
-
-      if (data.startsWith("your Turn")) {
-        displayCode(data);
+      if (data.turn) {
+        console.clear();
+        displayWords(words);
+        console.log(`CODE : \n==${data.code}==`);
         const hints = readHints();
         await writeHints(hints, connection, words);
         await guess(connection);
+      } else if (data.isWon) {
+        console.clear();
+        if (data.isWon === `yes`) {
+          console.log(`YOU WON`);
+        } else {
+          console.log(`YOU LOST`);
+        }
+        connection.close();
+        break;
       } else {
-        const hints = JSON.parse(data);
-        hints.forEach((element) => console.log(element));
+        displayCategories(data.hints, allHints);
         await guess(connection);
+        addHints(data.hints, allHints, data.code);
       }
-      
     }
   }
 };
