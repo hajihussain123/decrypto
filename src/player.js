@@ -20,10 +20,14 @@ const connect = async () => {
   });
 };
 
-const displayWords = (data) => {
+const displayWords = (data, points) => {
   const cards = data.map((word) => boxen(word));
-  const board = cards.reduce((line1, line2) => addLines(line1, line2));
-  console.log(board.join("\n"));
+  const board = cards.reduce((line1, line2) => addLines(line1, line2)).join(
+    "\n",
+  );
+  console.clear();
+  console.log(`POINTS\n${points}`);
+  console.log(board);
 };
 
 const read = async (connection) => {
@@ -47,19 +51,23 @@ const readHints = () => {
   return [hint1, hint2, hint3];
 };
 
-const guess = async (connection) => {
+const guess = async (connection, code) => {
   const encoder = new TextEncoder();
-  const code = prompt(`enter the code`);
-  console.log(`sending data....`);
-  await connection.write(encoder.encode(code));
+  const userCode = prompt(`enter the code`);
+  setTimeout(() => {
+    console.clear();
+    if (code === userCode) console.log(`you guessed correct`);
+    else console.log(`sorry its incorrect`);
+  }, 200);
+  await connection.write(encoder.encode(userCode));
 };
 
-const writeHints = async (hints, connection, words) => {
+const writeHints = async (hints, connection, words, points) => {
   const encoder = new TextEncoder();
   await connection.write(encoder.encode(JSON.stringify(hints)));
   console.clear();
-  displayWords(words);
-  hints.forEach((hint) => console.log(hint));
+  displayWords(words, points);
+  hints.forEach((hint) => console.log(`--> ${hint}`));
 };
 
 const boxenWords = (words) => {
@@ -71,19 +79,19 @@ const boxenWords = (words) => {
 };
 
 const displayHints = (allHints) => {
-  const first = boxenWords(allHints[1].map((word) => `|${word.padStart(8)}|`));
-  const second = boxenWords(allHints[2].map((word) => `|${word.padStart(8)}|`));
-  const third = boxenWords(allHints[3].map((word) => `|${word.padStart(8)}|`));
-  const fourth = boxenWords(allHints[4].map((word) => `|${word.padStart(8)}|`));
+  const formattedHints = Object.values(allHints).map((hints) =>
+    boxenWords(hints.map((word) => `|${word.padStart(8)}|`))
+  );
   console.log(
-    [first, second, third, fourth].reduce((a, b) => addLines(a, b)).join("\n"),
+    formattedHints.reduce((a, b) => addLines(a, b)).join("\n"),
   );
 };
 
-const displayCategories = (hints, allHints) => {
+const displayCategories = (hints, allHints, points) => {
   console.clear();
+  console.log(`POINTS\n${points}`);
   displayHints(allHints);
-  hints.forEach((element) => console.log(element));
+  hints.forEach((hint) => console.log(`--> ${hint}`));
 };
 
 const addHints = (hints, allHints, code) => {
@@ -93,38 +101,50 @@ const addHints = (hints, allHints, code) => {
   allHints[number3].push(hints[2]);
 };
 
+const write = async (connection, words, code, points) => {
+  console.clear();
+  displayWords(words, points);
+  console.log(`CODE : \n==${code}==`);
+  const hints = readHints();
+  await writeHints(hints, connection, words, points);
+  await guess(connection, code);
+};
+
+const makeDecision = (connection, data) => {
+  console.clear();
+  if (data.isWon === `yes`) {
+    console.log(`YOU WON`);
+  } else {
+    console.log(`YOU LOST`);
+  }
+  connection.close();
+};
+
+const handleGame = async (connection, allHints, words) => {
+  const [bytesRead, rawData] = await read(connection);
+  const data = JSON.parse(rawData);
+  if (bytesRead !== null) {
+    if (data.turn) {
+      await write(connection, words, data.code, data.points);
+    } else if (data.isWon) {
+      makeDecision(connection, data);
+      Deno.exit();
+    } else {
+      displayCategories(data.hints, allHints, data.points);
+      await guess(connection, data.code);
+      addHints(data.hints, allHints, data.code);
+    }
+  }
+};
+
 const main = async () => {
   const connection = await connect();
   const allHints = { 1: [], 2: [], 3: [], 4: [] };
   await printWelcome(connection);
-  const words = JSON.parse((await read(connection))[1]);
-  displayWords(words);
+  const data = JSON.parse((await read(connection))[1]);
+  displayWords(data.words, data.points);
   while (true) {
-    const [bytesRead, rawData] = await read(connection);
-    const data = JSON.parse(rawData);
-    if (bytesRead !== null) {
-      if (data.turn) {
-        console.clear();
-        displayWords(words);
-        console.log(`CODE : \n==${data.code}==`);
-        const hints = readHints();
-        await writeHints(hints, connection, words);
-        await guess(connection);
-      } else if (data.isWon) {
-        console.clear();
-        if (data.isWon === `yes`) {
-          console.log(`YOU WON`);
-        } else {
-          console.log(`YOU LOST`);
-        }
-        connection.close();
-        break;
-      } else {
-        displayCategories(data.hints, allHints);
-        await guess(connection);
-        addHints(data.hints, allHints, data.code);
-      }
-    }
+    await handleGame(connection, allHints, data.words);
   }
 };
 

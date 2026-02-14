@@ -1,10 +1,30 @@
 import { getWords } from "./words.js";
 
 const CODES = [
-  "1 2 3", "1 3 2", "2 1 3", "2 3 1", "3 1 2", "3 2 1",
-  "1 2 4", "1 4 2", "2 1 4", "2 4 1", "4 1 2", "4 2 1",
-  "1 3 4", "1 4 3", "3 1 4", "3 4 1", "4 1 3", "4 3 1",
-  "2 3 4", "2 4 3", "3 2 4", "3 4 2", "4 2 3", "4 3 2"
+  "1 2 3",
+  "1 3 2",
+  "2 1 3",
+  "2 3 1",
+  "3 1 2",
+  "3 2 1",
+  "1 2 4",
+  "1 4 2",
+  "2 1 4",
+  "2 4 1",
+  "4 1 2",
+  "4 2 1",
+  "1 3 4",
+  "1 4 3",
+  "3 1 4",
+  "3 4 1",
+  "4 1 3",
+  "4 3 1",
+  "2 3 4",
+  "2 4 3",
+  "3 2 4",
+  "3 4 2",
+  "4 2 3",
+  "4 3 2",
 ];
 
 const createListener = () => {
@@ -30,12 +50,16 @@ const getPlayers = async () => {
   }
 };
 
-const generateCode = () => CODES[Math.floor(Math.random()*CODES.length)];
+const generateCode = () => CODES[Math.floor(Math.random() * CODES.length)];
 
 const getHints = async (player, code) => {
   const encoder = new TextEncoder();
   const buffer = new Uint8Array(1024);
-  await player.conn.write(encoder.encode(JSON.stringify({turn:true, code:code})));
+  await player.conn.write(
+    encoder.encode(
+      JSON.stringify({ turn: true, code: code, points: player.points }),
+    ),
+  );
   const bytes = await player.conn.read(buffer);
   return [bytes, buffer];
 };
@@ -52,10 +76,14 @@ const handle = async (player1, player2) => {
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
   const code = generateCode();
-  const [bytes, buffer] = await getHints(player1, code);
+  const [bytes, buffer] = await getHints(player1, code); // player 1 points are sent here
   if (bytes !== null) {
     const data = JSON.parse(decoder.decode(buffer.slice(0, bytes)));
-    await player2.conn.write(encoder.encode(JSON.stringify({hints:data, code:code})));
+    await player2.conn.write(
+      encoder.encode(
+        JSON.stringify({ hints: data, code: code, points: player2.points }), // player 2 points are sent here
+      ),
+    );
     const player1Guess = await readGuess(player1);
     const player2Guess = await readGuess(player2);
     player1.points += player1Guess === code ? 0 : -1;
@@ -66,29 +94,37 @@ const handle = async (player1, player2) => {
 const sendWords = async (player1, player2) => {
   const encoder = new TextEncoder();
   const [player1Words, player2Words] = getWords();
-  await player1.write(encoder.encode(JSON.stringify(player1Words)));
-  await player2.write(encoder.encode(JSON.stringify(player2Words)));
+  await player1.conn.write(
+    encoder.encode(
+      JSON.stringify({ words: player1Words, points: player1.points }),
+    ),
+  );
+  await player2.conn.write(
+    encoder.encode(
+      JSON.stringify({ words: player2Words, points: player2.points }),
+    ),
+  );
 };
 
 const play = async (player1, player2) => {
-  await sendWords(player1, player2);
   const firstPlayer = { conn: player1, points: 0 };
   const secondPlayer = { conn: player2, points: 0 };
+  await sendWords(firstPlayer, secondPlayer);
   let rounds = 0;
   while (rounds < 16 && firstPlayer.points < 2 && secondPlayer.points < 2) {
     const players = rounds & 1
       ? [firstPlayer, secondPlayer]
       : [secondPlayer, firstPlayer];
     await handle(...players);
+    console.log(firstPlayer.points, secondPlayer.points)
     rounds++;
   }
-  if (firstPlayer.points >= 2) {
-    player1.write(new TextEncoder().encode(JSON.stringify({ isWon: `yes` })));
-    player2.write(new TextEncoder().encode(JSON.stringify({ isWon: `no` })));
-  }
-  if (secondPlayer.points >= 2) {
-    player2.write(new TextEncoder().encode(JSON.stringify({ isWon: `yes` })));
+  if (firstPlayer.points < secondPlayer.points) {
     player1.write(new TextEncoder().encode(JSON.stringify({ isWon: `no` })));
+    player2.write(new TextEncoder().encode(JSON.stringify({ isWon: `yes` })));
+  } else if (firstPlayer.points > secondPlayer.points) {
+    player1.write(new TextEncoder().encode(JSON.stringify({ isWon: `no` })));
+    player2.write(new TextEncoder().encode(JSON.stringify({ isWon: `yes` })));
   }
   player1.close();
   player2.close();
